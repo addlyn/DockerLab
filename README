@@ -1,0 +1,152 @@
+Dockerfile создает образ для запуска pgAdmin4 на базе Python 3.12 с использованием 
+минимального дистрибутива Alpine Linux. Включает в себя создание пользователя, 
+установку необходимых зависимостей, настройку конфигурации и запуск приложения.
+
+Структура Dockerfile:
+
+1. Базовый образ:
+   
+   python:3.12-alpine
+   
+   Создание образа будет использоваться Python 3.12 на базе Alpine.
+
+2. Рабочая директория:
+   
+   WORKDIR /opt/pgadmin
+   
+   Задает рабочую директорию на этапе сборки образа.
+
+3. Переменные:
+   
+   USER и GROUP(пользователь и группа под которыми будет запущен)
+   
+   Определяет переменные USER и GROUP, устанавливая их значения по умолчанию.
+
+4. Создание пользователя и каталогов:
+   
+   RUN addgroup -S $GROUP && \
+       adduser -D -S -s /sbin/nologin -G $GROUP $USER && \
+       mkdir /var/lib/pgadmin && \
+       mkdir /var/log/pgadmin && \
+       mkdir /opt/pgadmin/config && \
+       mkdir /opt/pgadmin/storage && \
+       chown $USER:$GROUP /var/lib/pgadmin && \
+       chown $USER:$GROUP /var/log/pgadmin && \
+       chown -R $USER:$GROUP /opt/pgadmin
+   
+   - Создает группу и пользователя с именем pgadmin.
+   - Создает необходимые каталоги для хранения данных и логов pgAdmin.
+   - Устанавливает права на созданные каталоги для пользователя и группы pgadmin.
+
+5. Установка pgAdmin4:
+   
+   RUN apk add --no-cache alpine-sdk linux-headers && \ 
+       pip install --upgrade pip && \
+       pip install https://ftp.postgresql.org/pub/pgadmin/pgadmin4/v8.10/pip/pgadmin4-8.10-py3-none-any.whl && \
+       apk del alpine-sdk linux-headers
+   
+   - Устанавливает необходимые пакеты для сборки pgAdmin.
+   - Обновляет pip и устанавливает pgAdmin4 из указанного URL.
+   - Удаляет временные пакеты для уменьшения размера образа.
+
+6. Копирование конфигурационного файла:
+   
+   COPY config_distro.py /usr/local/lib/python3.12/site-packages/pgadmin4/
+   
+   Копирует файл конфигурации pgAdmin4 в необходимую директорию.
+
+7. Настройка экспорта и тома:
+   
+   EXPOSE 5050
+   VOLUME /opt/pgadmin
+   
+   - Объявление порта 5050 для доступа к pgAdmin.
+   - Определяет том для хранения данных pgAdmin.
+
+8. Запуск pgAdmin4:
+   
+   USER $USER:$GROUP
+   CMD ["python", "/usr/local/lib/python3.12/site-packages/pgadmin4/pgAdmin4.py"]
+   
+   - Устанавливает пользователя, от имени которого будет запущено приложение.
+   - Определяет команду для запуска pgAdmin4 при старте контейнера.
+
+Этот Dockerfile представляет собой полный процесс создания образа для pgAdmin4, 
+включая создание среды, установку приложения и настройку необходимых прав доступа.
+
+
+
+Файл docker-compose.yml описывает конфигурацию для развертывания двух сервисов: 
+PostgreSQL и pgAdmin. С помощью Docker Compose пользователи могут легко управлять 
+многоконтейнерными приложениями.
+
+Структура Docker Compose файла:
+
+1. Определение сервисов:
+   
+   services:
+   
+
+2. Сервис Postgres:
+   
+   postgres:
+     image: postgres:16-alpine
+     restart: always
+     environment:
+       POSTGRES_USER: postgres
+       POSTGRES_PASSWORD: postgres
+       POSTGRES_DB: postgres
+       PGDATA: /var/lib/postgresql/data/pgdata
+     volumes:
+       - pgdata:/var/lib/postgresql/data
+   
+   - image: Указывает используемый образ PostgreSQL версии 16 на базе Alpine.
+   - restart: Устанавливает правило перезапуска контейнера в случае его остановки (в 
+   данном случае всегда).
+   - environment: Устанавливает переменные окружения для настройки базы данных:
+     - POSTGRES_USER: имя пользователя базы данных (по умолчанию postgres).
+     - POSTGRES_PASSWORD: пароль для пользователя (по умолчанию postgres).
+     - POSTGRES_DB: имя создаваемой базы данных (по умолчанию postgres).
+     - PGDATA: директория, где будут храниться файлы данных PostgreSQL.
+   - volumes: Определяет том для хранения данных базы, который обеспечит сохранение 
+   данных вне контейнера:
+     - pgdata мапируется на /var/lib/postgresql/data.
+
+3. Сервис pgAdmin:
+   
+   pgadmin:
+     build:
+       context: .
+       dockerfile: Dockerfile
+     image: pgadmin:8.10
+     restart: always
+     ports:
+       - "5050:5050"
+     volumes:
+       - pgadmin:/opt/pgadmin
+   
+   - build: Указывает, что образ будет построен локально:
+     - context: задает контекст сборки, в данном случае - текущую директорию.
+     - dockerfile: указывает имя Dockerfile, из которого будет собран образ.
+   - image: Задает имя для созданного образа pgAdmin (версии 8.10).
+   - restart: Также устанавливает правило перезапуска контейнера.
+   - ports: Пробрасывает порт контейнера на хост:
+     - "5050:5050" означает, что порт 5050 на хосте будет направлен на порт 5050 внутри 
+     контейнера pgAdmin.
+   - volumes: Определяет том для хранения данных pgAdmin:
+     - pgadmin мапируется на /opt/pgadmin для хранения конфигурации и данных pgAdmin.
+
+4. Определение томов:
+   
+   volumes:
+     pgadmin:
+     pgdata:
+   
+   - Объявляет два тома: pgadmin и pgdata для использования ими в соответствующих 
+   сервисах. Это позволяет обеспечить постоянство данных даже после перезапуска 
+   контейнеров.
+
+Этот docker-compose.yml файл упрощает процесс развертывания и управления PostgreSQL 
+и pgAdmin в контейнерах. Он определяет необходимые конфигурации, такие как переменные 
+окружения для PostgreSQL, порты, а также тома для хранения данных. Пользователь может 
+легко запускать все контейнеры с помощью одной команды.
